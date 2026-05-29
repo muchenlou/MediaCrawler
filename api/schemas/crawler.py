@@ -17,7 +17,7 @@
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
 from enum import Enum
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from pydantic import BaseModel
 
 
@@ -57,25 +57,41 @@ class SaveDataOptionEnum(str, Enum):
     EXCEL = "excel"
 
 
+class SearchSortTypeEnum(str, Enum):
+    """Search result sort type"""
+    GENERAL = "general"
+    MOST_POPULAR = "popularity_descending"
+    LATEST = "time_descending"
+
+
 class CrawlerStartRequest(BaseModel):
     """Crawler start request"""
+    task_name: str = ""
+    tags: List[str] = []
+    source_template_id: str = ""
     platform: PlatformEnum
     login_type: LoginTypeEnum = LoginTypeEnum.QRCODE
     crawler_type: CrawlerTypeEnum = CrawlerTypeEnum.SEARCH
     keywords: str = ""  # Keywords for search mode
     specified_ids: str = ""  # Post/video ID list for detail mode, comma-separated
     creator_ids: str = ""  # Creator ID list for creator mode, comma-separated
+    sort_type: SearchSortTypeEnum = SearchSortTypeEnum.LATEST
+    max_notes_count: int = 20
     start_page: int = 1
     enable_comments: bool = True
     enable_sub_comments: bool = False
     save_option: SaveDataOptionEnum = SaveDataOptionEnum.JSONL
     cookies: str = ""
     headless: bool = False
+    cdp_connect_existing: bool = False
+    cdp_debug_port: int = 9222
 
 
 class CrawlerStatusResponse(BaseModel):
     """Crawler status response"""
     status: Literal["idle", "running", "stopping", "error"]
+    active_task_id: Optional[str] = None
+    queued_count: int = 0
     platform: Optional[str] = None
     crawler_type: Optional[str] = None
     started_at: Optional[str] = None
@@ -85,9 +101,54 @@ class CrawlerStatusResponse(BaseModel):
 class LogEntry(BaseModel):
     """Log entry"""
     id: int
+    task_id: Optional[str] = None
     timestamp: str
     level: Literal["info", "warning", "error", "success", "debug"]
     message: str
+
+
+class TaskRecord(BaseModel):
+    """Crawler task record"""
+    id: str
+    name: str = ""
+    status: Literal["queued", "running", "stopping", "completed", "failed", "stopped"]
+    platform: str
+    crawler_type: str
+    save_option: str
+    login_type: str
+    target: str = ""
+    tags: List[str] = []
+    source_template_id: str = ""
+    created_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    exit_code: Optional[int] = None
+    command: List[str] = []
+    result_files: List[str] = []
+    logs_count: int = 0
+    error_message: Optional[str] = None
+    config: CrawlerStartRequest
+
+
+class TemplateRecord(BaseModel):
+    """Reusable crawler task template"""
+    id: str
+    name: str
+    description: str = ""
+    category: str = "通用"
+    tags: List[str] = []
+    config: CrawlerStartRequest
+    created_at: str
+    updated_at: str
+
+
+class TemplateUpsertRequest(BaseModel):
+    """Create or update a crawler template"""
+    name: str
+    description: str = ""
+    category: str = "通用"
+    tags: List[str] = []
+    config: CrawlerStartRequest
 
 
 class DataFileInfo(BaseModel):

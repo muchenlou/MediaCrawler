@@ -42,6 +42,66 @@ async def test_tieba_creator_cli_sets_creator_urls():
 
 
 @pytest.mark.asyncio
+async def test_cli_overrides_cdp_runtime_options(monkeypatch):
+    monkeypatch.setattr(config, "CDP_CONNECT_EXISTING", True)
+    monkeypatch.setattr(config, "CDP_DEBUG_PORT", 9222)
+
+    result = await parse_cmd(
+        [
+            "--platform",
+            "xhs",
+            "--cdp_connect_existing",
+            "false",
+            "--cdp_debug_port",
+            "9333",
+        ]
+    )
+
+    assert config.CDP_CONNECT_EXISTING is False
+    assert config.CDP_DEBUG_PORT == 9333
+    assert result.cdp_connect_existing is False
+    assert result.cdp_debug_port == 9333
+
+
+@pytest.mark.asyncio
+async def test_xhs_cli_sets_search_sort_type(monkeypatch):
+    monkeypatch.setattr(config, "SORT_TYPE", "time_descending")
+
+    result = await parse_cmd(
+        [
+            "--platform",
+            "xhs",
+            "--type",
+            "search",
+            "--sort_type",
+            "popularity_descending",
+        ]
+    )
+
+    assert config.SORT_TYPE == "popularity_descending"
+    assert result.sort_type == "popularity_descending"
+
+
+@pytest.mark.asyncio
+async def test_cli_sets_max_notes_count(monkeypatch):
+    monkeypatch.setattr(config, "CRAWLER_MAX_NOTES_COUNT", 15)
+
+    result = await parse_cmd(
+        [
+            "--platform",
+            "xhs",
+            "--type",
+            "search",
+            "--max_notes_count",
+            "40",
+        ]
+    )
+
+    assert config.CRAWLER_MAX_NOTES_COUNT == 40
+    assert result.max_notes_count == 40
+
+
+@pytest.mark.asyncio
 async def test_tieba_detail_reads_runtime_specified_ids(monkeypatch):
     crawler = TieBaCrawler()
     seen_note_ids = []

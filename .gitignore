@@ -161,14 +161,30 @@ cython_debug/
 
 *.xml
 *.iml
-.idea
-/temp_image/
-/browser_data/
-/data/
+.idea/
 
-*/.DS_Store
-.vscode
-/node_modules
+# Local app/runtime state
+.claude/
+temp_image/
+browser_data/
+data/
+
+# OS/editor files
+.DS_Store
+.vscode/
+
+# Frontend dependencies/build output
+node_modules/
+**/node_modules/
+**/.vite/
+**/dist/
+**/build/
+api/webui/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 docs/.vitepress/cache
 
 # other gitignore

@@ -38,6 +38,7 @@ from pathlib import Path
 
 try:
     import openpyxl
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
     EXCEL_AVAILABLE = True
@@ -47,6 +48,126 @@ except ImportError:
 from base.base_crawler import AbstractStore
 from tools import utils
 import config
+from store.export_field_labels import get_export_field_label, prepare_export_item
+
+SPLIT_COLUMN_LIMITS = {
+    "image": 12,
+    "tag": 10,
+    "picture": 5,
+    "note_image": 12,
+}
+
+XHS_CONTENT_HEADERS = [
+    "source_keyword",
+    "title",
+    "note_url",
+    "type",
+    "desc",
+    "time",
+    "last_update_time",
+    "user_id",
+    "nickname",
+    "avatar",
+    "ip_location",
+    "liked_count",
+    "collected_count",
+    "comment_count",
+    "share_count",
+    *[f"tag_{index}" for index in range(1, SPLIT_COLUMN_LIMITS["tag"] + 1)],
+    *[f"image_{index}" for index in range(1, SPLIT_COLUMN_LIMITS["image"] + 1)],
+    "video_url",
+    "xsec_token",
+    "last_modify_ts",
+]
+
+XHS_COMMENT_HEADERS = [
+    "note_id",
+    "comment_id",
+    "parent_comment_id",
+    "content",
+    "create_time",
+    "user_id",
+    "nickname",
+    "avatar",
+    "ip_location",
+    "like_count",
+    "sub_comment_count",
+    *[f"picture_{index}" for index in range(1, SPLIT_COLUMN_LIMITS["picture"] + 1)],
+    "last_modify_ts",
+]
+
+DOUYIN_CONTENT_HEADERS = [
+    "source_keyword",
+    "aweme_id",
+    "aweme_url",
+    "aweme_type",
+    "title",
+    "desc",
+    "create_time",
+    "user_id",
+    "sec_uid",
+    "short_user_id",
+    "user_unique_id",
+    "user_signature",
+    "nickname",
+    "avatar",
+    "ip_location",
+    "liked_count",
+    "collected_count",
+    "comment_count",
+    "share_count",
+    "cover_url",
+    "video_download_url",
+    "music_download_url",
+    *[f"note_image_{index}" for index in range(1, SPLIT_COLUMN_LIMITS["note_image"] + 1)],
+    "last_modify_ts",
+]
+
+DOUYIN_COMMENT_HEADERS = [
+    "aweme_id",
+    "comment_id",
+    "parent_comment_id",
+    "content",
+    "create_time",
+    "user_id",
+    "sec_uid",
+    "short_user_id",
+    "user_unique_id",
+    "user_signature",
+    "nickname",
+    "avatar",
+    "ip_location",
+    "like_count",
+    "sub_comment_count",
+    *[f"picture_{index}" for index in range(1, SPLIT_COLUMN_LIMITS["picture"] + 1)],
+    "last_modify_ts",
+]
+
+PLATFORM_CONTENT_HEADERS = {
+    "xhs": XHS_CONTENT_HEADERS,
+    "douyin": DOUYIN_CONTENT_HEADERS,
+}
+
+PLATFORM_COMMENT_HEADERS = {
+    "xhs": XHS_COMMENT_HEADERS,
+    "douyin": DOUYIN_COMMENT_HEADERS,
+}
+
+PLATFORM_SPLIT_COLUMNS = {
+    ("xhs", "content"): {
+        "tag_list": ("tag", SPLIT_COLUMN_LIMITS["tag"]),
+        "image_list": ("image", SPLIT_COLUMN_LIMITS["image"]),
+    },
+    ("xhs", "comment"): {
+        "pictures": ("picture", SPLIT_COLUMN_LIMITS["picture"]),
+    },
+    ("douyin", "content"): {
+        "note_download_url": ("note_image", SPLIT_COLUMN_LIMITS["note_image"]),
+    },
+    ("douyin", "comment"): {
+        "pictures": ("picture", SPLIT_COLUMN_LIMITS["picture"]),
+    },
+}
 
 
 class ExcelStoreBase(AbstractStore):
@@ -190,7 +311,10 @@ class ExcelStoreBase(AbstractStore):
             adjusted_width = min(max(max_length + 2, 10), 50)
             sheet.column_dimensions[column_letter].width = adjusted_width
 
-    def _write_headers(self, sheet, headers: List[str]):
+    def _display_header(self, header: str, item_type: str) -> str:
+        return get_export_field_label(self.platform, header, item_type)
+
+    def _write_headers(self, sheet, headers: List[str], item_type: str = ""):
         """
         Write headers to sheet
 
@@ -199,9 +323,71 @@ class ExcelStoreBase(AbstractStore):
             headers: List of header names
         """
         for col_num, header in enumerate(headers, 1):
-            sheet.cell(row=1, column=col_num, value=header)
+            sheet.cell(row=1, column=col_num, value=self._display_header(header, item_type))
 
         self._apply_header_style(sheet)
+
+    def _split_cell_collection(self, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, tuple):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return [item.strip() for item in str(value).split(",") if item.strip()]
+
+    def _expand_collection_columns(self, data: Dict[str, Any], item_type: str) -> Dict[str, Any]:
+        expanded = dict(data)
+        split_config = PLATFORM_SPLIT_COLUMNS.get((self.platform, item_type), {})
+        for source_key, (target_prefix, limit) in split_config.items():
+            values = self._split_cell_collection(data.get(source_key))
+            expanded.pop(source_key, None)
+            for index in range(1, limit + 1):
+                expanded[f"{target_prefix}_{index}"] = values[index - 1] if index <= len(values) else ""
+        return expanded
+
+    def _prepare_sheet_item(self, item: Dict[str, Any], item_type: str) -> tuple[Dict[str, Any], List[str]]:
+        item = prepare_export_item(self.platform, item, item_type)
+
+        if item_type == "content":
+            platform_headers = PLATFORM_CONTENT_HEADERS.get(self.platform)
+        elif item_type == "comment":
+            platform_headers = PLATFORM_COMMENT_HEADERS.get(self.platform)
+        else:
+            platform_headers = None
+
+        if not platform_headers:
+            return item, list(item.keys())
+
+        normalized = self._expand_collection_columns(item, item_type)
+        normalized = {
+            header: normalized.get(header, "")
+            for header in platform_headers
+        } | {
+            key: value
+            for key, value in normalized.items()
+            if key not in platform_headers
+        }
+        headers = platform_headers + [
+            key
+            for key in normalized.keys()
+            if key not in platform_headers
+        ]
+        return normalized, headers
+
+    def _sanitize_cell_value(self, value: Any) -> Any:
+        """
+        Convert crawler data into values accepted by openpyxl cells.
+        """
+        if isinstance(value, (list, dict)):
+            value = str(value)
+        elif value is None:
+            return ""
+
+        if isinstance(value, str):
+            return ILLEGAL_CHARACTERS_RE.sub("", value)
+
+        return value
 
     def _write_row(self, sheet, data: Dict[str, Any], headers: List[str]):
         """
@@ -215,13 +401,7 @@ class ExcelStoreBase(AbstractStore):
         row_num = sheet.max_row + 1
 
         for col_num, header in enumerate(headers, 1):
-            value = data.get(header, "")
-
-            # Handle different data types
-            if isinstance(value, (list, dict)):
-                value = str(value)
-            elif value is None:
-                value = ""
+            value = self._sanitize_cell_value(data.get(header, ""))
 
             cell = sheet.cell(row=row_num, column=col_num, value=value)
 
@@ -241,12 +421,11 @@ class ExcelStoreBase(AbstractStore):
         Args:
             content_item: Content data dictionary
         """
-        # Define headers (customize based on platform)
-        headers = list(content_item.keys())
+        content_item, headers = self._prepare_sheet_item(content_item, "content")
 
         # Write headers if first time
         if not self.contents_headers_written:
-            self._write_headers(self.contents_sheet, headers)
+            self._write_headers(self.contents_sheet, headers, "content")
             self.contents_headers_written = True
 
         # Write data row
@@ -263,12 +442,11 @@ class ExcelStoreBase(AbstractStore):
         Args:
             comment_item: Comment data dictionary
         """
-        # Define headers
-        headers = list(comment_item.keys())
+        comment_item, headers = self._prepare_sheet_item(comment_item, "comment")
 
         # Write headers if first time
         if not self.comments_headers_written:
-            self._write_headers(self.comments_sheet, headers)
+            self._write_headers(self.comments_sheet, headers, "comment")
             self.comments_headers_written = True
 
         # Write data row
@@ -288,7 +466,7 @@ class ExcelStoreBase(AbstractStore):
 
         # Write headers if first time
         if not self.creators_headers_written:
-            self._write_headers(self.creators_sheet, headers)
+            self._write_headers(self.creators_sheet, headers, "creator")
             self.creators_headers_written = True
 
         # Write data row

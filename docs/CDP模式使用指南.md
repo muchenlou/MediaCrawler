@@ -66,6 +66,12 @@ CDP_DEBUG_PORT = 9222
 
 如果不想连接已有浏览器，可以让程序自动启动一个新的浏览器实例：
 
+```bash
+uv run main.py --platform xhs --lt qrcode --type search --cdp_connect_existing false
+```
+
+也可以修改配置：
+
 ```python
 ENABLE_CDP_MODE = True
 CDP_CONNECT_EXISTING = False  # 关闭连接已有浏览器，改为启动新浏览器

@@ -143,6 +143,9 @@ uv run playwright install
 # 从配置文件中读取关键词搜索相关的帖子并爬取帖子信息与评论
 uv run main.py --platform xhs --lt qrcode --type search
 
+# 如果没有开启已有 Chrome 的远程调试，可让程序自动启动新的浏览器
+uv run main.py --platform xhs --lt qrcode --type search --cdp_connect_existing false
+
 # 从配置文件中读取指定的帖子ID列表获取指定帖子的信息与评论信息
 uv run main.py --platform xhs --lt qrcode --type detail
 

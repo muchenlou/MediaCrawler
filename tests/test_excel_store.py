@@ -34,6 +34,7 @@ except ImportError:
     EXCEL_AVAILABLE = False
 
 from store.excel_store_base import ExcelStoreBase
+from store.export_field_labels import translate_export_item_keys
 
 
 @pytest.mark.skipif(not EXCEL_AVAILABLE, reason="openpyxl not installed")
@@ -91,6 +92,111 @@ class TestExcelStoreBase:
         # Verify data was written
         assert excel_store.contents_sheet.max_row == 2  # Header + 1 data row
         assert excel_store.contents_headers_written is True
+
+    @pytest.mark.asyncio
+    async def test_store_content_removes_illegal_excel_characters(self, excel_store):
+        """Test storing content with control characters rejected by Excel."""
+        await excel_store.store_content({
+            "note_id": "test123",
+            "desc": "valid\x08text\x0b",
+        })
+
+        assert excel_store.contents_sheet.cell(row=2, column=2).value == "validtext"
+
+    @pytest.mark.asyncio
+    async def test_xhs_content_uses_platform_columns_and_splits_collections(self, temp_dir, monkeypatch):
+        """Test Xiaohongshu Excel export uses content fields instead of raw joined collections."""
+        monkeypatch.chdir(temp_dir)
+        store = ExcelStoreBase(platform="xhs", crawler_type="search")
+
+        await store.store_content({
+            "note_id": "note123",
+            "title": "XHS title",
+            "desc": "XHS desc",
+            "time": 1700000000000,
+            "last_update_time": 1700003600,
+            "image_list": "https://img.example/1.jpg,https://img.example/2.jpg",
+            "tag_list": "职场,工资",
+            "source_keyword": "计件困难",
+        })
+
+        headers = [cell.value for cell in store.contents_sheet[1]]
+        row = {
+            header: store.contents_sheet.cell(row=2, column=index).value
+            for index, header in enumerate(headers, 1)
+        }
+
+        assert "image_list" not in headers
+        assert "tag_list" not in headers
+        assert "笔记ID" not in headers
+        assert row["笔记标题"] == "XHS title"
+        assert row["发布时间"] == "2023-11-15 06:13:20"
+        assert row["最后更新时间"] == "2023-11-15 07:13:20"
+        assert row["图片链接1"] == "https://img.example/1.jpg"
+        assert row["图片链接2"] == "https://img.example/2.jpg"
+        assert row["话题标签1"] == "职场"
+        assert row["话题标签2"] == "工资"
+
+    def test_xhs_file_export_translates_field_keys(self):
+        """Test Xiaohongshu CSV/JSON/JSONL export keys are readable Chinese labels."""
+        translated = translate_export_item_keys("xhs", {
+            "note_id": "note123",
+            "title": "XHS title",
+            "liked_count": 12,
+            "time": 1700000000000,
+            "last_modify_ts": 1700003600,
+            "image_list": "https://img.example/1.jpg",
+        }, "contents")
+
+        assert translated == {
+            "笔记标题": "XHS title",
+            "点赞数": 12,
+            "发布时间": "2023-11-15 06:13:20",
+            "采集更新时间": "2023-11-15 07:13:20",
+            "图片链接": "https://img.example/1.jpg",
+        }
+
+    def test_xhs_comment_keeps_note_reference_and_translates_time(self):
+        """Test Xiaohongshu comment export keeps note id for traceability."""
+        translated = translate_export_item_keys("xhs", {
+            "note_id": "note123",
+            "comment_id": "comment123",
+            "create_time": 1700000000000,
+            "content": "Great",
+        }, "comments")
+
+        assert translated == {
+            "所属笔记ID": "note123",
+            "评论ID": "comment123",
+            "评论时间": "2023-11-15 06:13:20",
+            "评论内容": "Great",
+        }
+
+    @pytest.mark.asyncio
+    async def test_douyin_content_uses_platform_columns_and_splits_note_images(self, temp_dir, monkeypatch):
+        """Test Douyin Excel export maps aweme fields and splits image note URLs."""
+        monkeypatch.chdir(temp_dir)
+        store = ExcelStoreBase(platform="douyin", crawler_type="search")
+
+        await store.store_content({
+            "aweme_id": "aweme123",
+            "aweme_url": "https://www.douyin.com/video/aweme123",
+            "title": "Douyin title",
+            "note_download_url": "https://img.example/a.jpg,https://img.example/b.jpg",
+            "source_keyword": "报销困难",
+        })
+
+        headers = [cell.value for cell in store.contents_sheet[1]]
+        row = {
+            header: store.contents_sheet.cell(row=2, column=index).value
+            for index, header in enumerate(headers, 1)
+        }
+
+        assert "note_download_url" not in headers
+        assert row["aweme_id"] == "aweme123"
+        assert row["aweme_url"] == "https://www.douyin.com/video/aweme123"
+        assert row["note_image_1"] == "https://img.example/a.jpg"
+        assert row["note_image_2"] == "https://img.example/b.jpg"
 
     @pytest.mark.asyncio
     async def test_store_comment(self, excel_store):

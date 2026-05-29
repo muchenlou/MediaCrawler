@@ -18,6 +18,8 @@
 
 import os
 import json
+import math
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +44,9 @@ def get_file_info(file_path: Path) -> dict:
                 data = json.load(f)
                 if isinstance(data, list):
                     record_count = len(data)
+        elif file_path.suffix == ".jsonl":
+            with open(file_path, "r", encoding="utf-8") as f:
+                record_count = sum(1 for line in f if line.strip())
         elif file_path.suffix == ".csv":
             with open(file_path, "r", encoding="utf-8") as f:
                 record_count = sum(1 for _ in f) - 1  # Subtract header row
@@ -58,6 +63,43 @@ def get_file_info(file_path: Path) -> dict:
     }
 
 
+def sanitize_json_value(value):
+    """Convert preview values to JSON-safe primitives."""
+    if value is None:
+        return None
+
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+
+    if isinstance(value, dict):
+        return {str(k): sanitize_json_value(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [sanitize_json_value(item) for item in value]
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return sanitize_json_value(item())
+        except Exception:
+            pass
+
+    try:
+        if value != value:
+            return None
+    except Exception:
+        pass
+
+    return value
+
+
+def sanitize_preview_rows(rows):
+    return [sanitize_json_value(row) for row in rows]
+
+
 @router.get("/files")
 async def list_data_files(platform: Optional[str] = None, file_type: Optional[str] = None):
     """Get data file list"""
@@ -65,11 +107,13 @@ async def list_data_files(platform: Optional[str] = None, file_type: Optional[st
         return {"files": []}
 
     files = []
-    supported_extensions = {".json", ".csv", ".xlsx", ".xls"}
+    supported_extensions = {".json", ".jsonl", ".csv", ".xlsx", ".xls"}
 
     for root, dirs, filenames in os.walk(DATA_DIR):
         root_path = Path(root)
         for filename in filenames:
+            if filename in {"webui_tasks.json", "webui_templates.json"}:
+                continue
             file_path = root_path / filename
             if file_path.suffix.lower() not in supported_extensions:
                 continue
@@ -121,6 +165,19 @@ async def get_file_content(file_path: str, preview: bool = True, limit: int = 10
                     if isinstance(data, list):
                         return {"data": data[:limit], "total": len(data)}
                     return {"data": data, "total": 1}
+            elif full_path.suffix == ".jsonl":
+                rows = []
+                total = 0
+                with open(full_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        total += 1
+                        if len(rows) >= limit:
+                            continue
+                        rows.append(json.loads(line))
+                return {"data": sanitize_preview_rows(rows), "total": total}
             elif full_path.suffix == ".csv":
                 import csv
                 with open(full_path, "r", encoding="utf-8") as f:
@@ -133,7 +190,7 @@ async def get_file_content(file_path: str, preview: bool = True, limit: int = 10
                     # Re-read to get total count
                     f.seek(0)
                     total = sum(1 for _ in f) - 1
-                    return {"data": rows, "total": total}
+                    return {"data": sanitize_preview_rows(rows), "total": total}
             elif full_path.suffix.lower() in (".xlsx", ".xls"):
                 import pandas as pd
                 # Read first limit rows
@@ -144,7 +201,7 @@ async def get_file_content(file_path: str, preview: bool = True, limit: int = 10
                 # Convert to list of dictionaries, handle NaN values
                 rows = df.where(pd.notnull(df), None).to_dict(orient='records')
                 return {
-                    "data": rows,
+                    "data": sanitize_preview_rows(rows),
                     "total": total,
                     "columns": list(df.columns)
                 }
@@ -200,11 +257,13 @@ async def get_data_stats():
         "by_type": {}
     }
 
-    supported_extensions = {".json", ".csv", ".xlsx", ".xls"}
+    supported_extensions = {".json", ".jsonl", ".csv", ".xlsx", ".xls"}
 
     for root, dirs, filenames in os.walk(DATA_DIR):
         root_path = Path(root)
         for filename in filenames:
+            if filename in {"webui_tasks.json", "webui_templates.json"}:
+                continue
             file_path = root_path / filename
             if file_path.suffix.lower() not in supported_extensions:
                 continue

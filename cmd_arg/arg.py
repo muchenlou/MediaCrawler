@@ -78,6 +78,14 @@ class SaveDataOptionEnum(str, Enum):
     POSTGRES = "postgres"
 
 
+class SearchSortTypeEnum(str, Enum):
+    """Search result sort type enumeration"""
+
+    GENERAL = "general"
+    MOST_POPULAR = "popularity_descending"
+    LATEST = "time_descending"
+
+
 class InitDbOptionEnum(str, Enum):
     """Database initialization option"""
 
@@ -198,6 +206,22 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
                 rich_help_panel="Basic Configuration",
             ),
         ] = config.KEYWORDS,
+        sort_type: Annotated[
+            SearchSortTypeEnum,
+            typer.Option(
+                "--sort_type",
+                help="Search sort type for Xiaohongshu search mode (general=Default | popularity_descending=Most popular | time_descending=Latest)",
+                rich_help_panel="Basic Configuration",
+            ),
+        ] = _coerce_enum(SearchSortTypeEnum, config.SORT_TYPE, SearchSortTypeEnum.LATEST),
+        max_notes_count: Annotated[
+            int,
+            typer.Option(
+                "--max_notes_count",
+                help="Maximum number of notes/posts to crawl in search mode",
+                rich_help_panel="Basic Configuration",
+            ),
+        ] = config.CRAWLER_MAX_NOTES_COUNT,
         get_comment: Annotated[
             str,
             typer.Option(
@@ -225,6 +249,24 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
                 show_default=True,
             ),
         ] = str(config.HEADLESS),
+        cdp_connect_existing: Annotated[
+            str,
+            typer.Option(
+                "--cdp_connect_existing",
+                help="Whether CDP mode connects to an existing browser instead of launching a new one, supports yes/true/t/y/1 or no/false/f/n/0",
+                rich_help_panel="Runtime Configuration",
+                show_default=True,
+            ),
+        ] = str(config.CDP_CONNECT_EXISTING),
+        cdp_debug_port: Annotated[
+            int,
+            typer.Option(
+                "--cdp_debug_port",
+                help="Chrome DevTools Protocol debug port used in CDP mode",
+                rich_help_panel="Runtime Configuration",
+                show_default=True,
+            ),
+        ] = config.CDP_DEBUG_PORT,
         save_data_option: Annotated[
             SaveDataOptionEnum,
             typer.Option(
@@ -322,6 +364,7 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
         enable_comment = _to_bool(get_comment)
         enable_sub_comment = _to_bool(get_sub_comment)
         enable_headless = _to_bool(headless)
+        enable_cdp_connect_existing = _to_bool(cdp_connect_existing)
         enable_ip_proxy_value = _to_bool(enable_ip_proxy)
         init_db_value = init_db.value if init_db else None
 
@@ -335,10 +378,14 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
         config.CRAWLER_TYPE = crawler_type.value
         config.START_PAGE = start
         config.KEYWORDS = keywords
+        config.SORT_TYPE = sort_type.value
+        config.CRAWLER_MAX_NOTES_COUNT = max_notes_count
         config.ENABLE_GET_COMMENTS = enable_comment
         config.ENABLE_GET_SUB_COMMENTS = enable_sub_comment
         config.HEADLESS = enable_headless
         config.CDP_HEADLESS = enable_headless
+        config.CDP_CONNECT_EXISTING = enable_cdp_connect_existing
+        config.CDP_DEBUG_PORT = cdp_debug_port
         config.SAVE_DATA_OPTION = save_data_option.value
         config.COOKIES = cookies
         config.CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = max_comments_count_singlenotes
@@ -387,9 +434,13 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
             type=config.CRAWLER_TYPE,
             start=config.START_PAGE,
             keywords=config.KEYWORDS,
+            sort_type=config.SORT_TYPE,
+            max_notes_count=config.CRAWLER_MAX_NOTES_COUNT,
             get_comment=config.ENABLE_GET_COMMENTS,
             get_sub_comment=config.ENABLE_GET_SUB_COMMENTS,
             headless=config.HEADLESS,
+            cdp_connect_existing=config.CDP_CONNECT_EXISTING,
+            cdp_debug_port=config.CDP_DEBUG_PORT,
             save_data_option=config.SAVE_DATA_OPTION,
             init_db=init_db_value,
             cookies=config.COOKIES,

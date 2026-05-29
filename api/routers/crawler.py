@@ -18,7 +18,7 @@
 
 from fastapi import APIRouter, HTTPException
 
-from ..schemas import CrawlerStartRequest, CrawlerStatusResponse
+from ..schemas import CrawlerStartRequest, CrawlerStatusResponse, TaskRecord
 from ..services import crawler_manager
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
@@ -27,25 +27,20 @@ router = APIRouter(prefix="/crawler", tags=["crawler"])
 @router.post("/start")
 async def start_crawler(request: CrawlerStartRequest):
     """Start crawler task"""
-    success = await crawler_manager.start(request)
-    if not success:
-        # Handle concurrent/duplicate requests: if process is already running, return 400 instead of 500
-        if crawler_manager.process and crawler_manager.process.poll() is None:
-            raise HTTPException(status_code=400, detail="Crawler is already running")
-        raise HTTPException(status_code=500, detail="Failed to start crawler")
-
-    return {"status": "ok", "message": "Crawler started successfully"}
+    task = await crawler_manager.start(request)
+    return {
+        "status": "ok",
+        "message": "Crawler task accepted",
+        "task": task.model_dump(),
+    }
 
 
 @router.post("/stop")
-async def stop_crawler():
+async def stop_crawler(task_id: str | None = None):
     """Stop crawler task"""
-    success = await crawler_manager.stop()
+    success = await crawler_manager.stop(task_id=task_id)
     if not success:
-        # Handle concurrent/duplicate requests: if process already exited/doesn't exist, return 400 instead of 500
-        if not crawler_manager.process or crawler_manager.process.poll() is not None:
-            raise HTTPException(status_code=400, detail="No crawler is running")
-        raise HTTPException(status_code=500, detail="Failed to stop crawler")
+        raise HTTPException(status_code=400, detail="No matching running or queued crawler task")
 
     return {"status": "ok", "message": "Crawler stopped successfully"}
 
@@ -60,4 +55,29 @@ async def get_crawler_status():
 async def get_logs(limit: int = 100):
     """Get recent logs"""
     logs = crawler_manager.logs[-limit:] if limit > 0 else crawler_manager.logs
+    return {"logs": [log.model_dump() for log in logs]}
+
+
+@router.get("/tasks", response_model=list[TaskRecord])
+async def list_tasks(limit: int = 50):
+    """Get crawler task history"""
+    tasks = crawler_manager.tasks
+    return tasks[:limit] if limit > 0 else tasks
+
+
+@router.get("/tasks/{task_id}", response_model=TaskRecord)
+async def get_task(task_id: str):
+    """Get crawler task detail"""
+    task = crawler_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.get("/tasks/{task_id}/logs")
+async def get_task_logs(task_id: str, limit: int = 500):
+    """Get logs for a crawler task"""
+    if not crawler_manager.get_task(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    logs = crawler_manager.get_task_logs(task_id, limit=limit)
     return {"logs": [log.model_dump() for log in logs]}

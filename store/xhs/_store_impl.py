@@ -38,6 +38,7 @@ from var import crawler_type_var
 from database.mongodb_store_base import MongoDBStoreBase
 from tools import utils
 from store.excel_store_base import ExcelStoreBase
+from store.export_field_labels import translate_export_item_keys
 
 class XhsCsvStoreImplement(AbstractStore):
     def __init__(self, **kwargs):
@@ -50,7 +51,7 @@ class XhsCsvStoreImplement(AbstractStore):
         :param content_item:
         :return:
         """
-        await self.writer.write_to_csv(item_type="contents", item=content_item)
+        await self.writer.write_to_csv(item_type="contents", item=translate_export_item_keys("xhs", content_item, "contents"))
 
     async def store_comment(self, comment_item: Dict):
         """
@@ -58,7 +59,7 @@ class XhsCsvStoreImplement(AbstractStore):
         :param comment_item:
         :return:
         """
-        await self.writer.write_to_csv(item_type="comments", item=comment_item)
+        await self.writer.write_to_csv(item_type="comments", item=translate_export_item_keys("xhs", comment_item, "comments"))
 
 
     async def store_creator(self, creator_item: Dict):
@@ -79,7 +80,7 @@ class XhsJsonStoreImplement(AbstractStore):
         :param content_item:
         :return:
         """
-        await self.writer.write_single_item_to_json(item_type="contents", item=content_item)
+        await self.writer.write_single_item_to_json(item_type="contents", item=translate_export_item_keys("xhs", content_item, "contents"))
 
     async def store_comment(self, comment_item: Dict):
         """
@@ -87,7 +88,7 @@ class XhsJsonStoreImplement(AbstractStore):
         :param comment_item:
         :return:
         """
-        await self.writer.write_single_item_to_json(item_type="comments", item=comment_item)
+        await self.writer.write_single_item_to_json(item_type="comments", item=translate_export_item_keys("xhs", comment_item, "comments"))
 
     async def store_creator(self, creator_item: Dict):
         pass
@@ -107,10 +108,10 @@ class XhsJsonlStoreImplement(AbstractStore):
         self.writer = AsyncFileWriter(platform="xhs", crawler_type=crawler_type_var.get())
 
     async def store_content(self, content_item: Dict):
-        await self.writer.write_to_jsonl(item_type="contents", item=content_item)
+        await self.writer.write_to_jsonl(item_type="contents", item=translate_export_item_keys("xhs", content_item, "contents"))
 
     async def store_comment(self, comment_item: Dict):
-        await self.writer.write_to_jsonl(item_type="comments", item=comment_item)
+        await self.writer.write_to_jsonl(item_type="comments", item=translate_export_item_keys("xhs", comment_item, "comments"))
 
     async def store_creator(self, creator_item: Dict):
         pass

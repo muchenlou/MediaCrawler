@@ -25,12 +25,12 @@ import asyncio
 import os
 import subprocess
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
-from .routers import crawler_router, data_router, websocket_router
+from .routers import crawler_router, data_router, templates_router, websocket_router
 
 app = FastAPI(
     title="MediaCrawler WebUI API",
@@ -55,9 +55,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def optional_token_auth(request: Request, call_next):
+    """Protect API calls when WEBUI_AUTH_TOKEN is configured."""
+    token = os.getenv("WEBUI_AUTH_TOKEN", "").strip()
+    if not token or request.url.path == "/api/health" or not request.url.path.startswith("/api"):
+        return await call_next(request)
+
+    auth_header = request.headers.get("authorization", "")
+    header_token = request.headers.get("x-webui-token", "")
+    bearer_token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+    if header_token != token and bearer_token != token:
+        return JSONResponse({"detail": "Invalid or missing WebUI token"}, status_code=401)
+
+    return await call_next(request)
+
 # Register routers
 app.include_router(crawler_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
+app.include_router(templates_router, prefix="/api")
 app.include_router(websocket_router, prefix="/api")
 
 
